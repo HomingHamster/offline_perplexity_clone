@@ -1,14 +1,13 @@
 import requests
 from bs4 import BeautifulSoup
 import numpy as np  # Required to dedupe sites
-from langchain.embeddings import LlamaCppEmbeddings
-from langchain.llms.llamacpp import LlamaCpp
 from readabilipy import simple_json_from_html_string  # Required to parse HTML to pure text
 from langchain.schema import Document  # Required to create a Document object
-from langchain.vectorstores import Chroma
 from langchain.chains import VectorDBQA  # Required to create a Question-Answer object using a vector
 import pprint  # Required to pretty print the results
 from langchain.text_splitter import CharacterTextSplitter
+from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langchain_community.vectorstores import Chroma
 
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
@@ -21,7 +20,7 @@ params = {
     "start": 0,
 }
 
-page_limit = 10
+page_limit = 1
 page_num = 0
 urls=[]
 
@@ -43,31 +42,26 @@ while True:
 urls = list(np.unique(urls))
 print(urls)
 
-#if the scrape of google returns results that cant be parsed into json, then copy the modified list here (better parsing is coming)
 
-#urls=['https://embryo.asu.edu/pages/human-genome-project-1990-2003', 
-      #'https://en.wikipedia.org/wiki/Human_Genome_Project', 
-      #'https://plato.stanford.edu/entries/human-genome/']
-
-def scrape_and_parse(url):
-    """Scrape a webpage and parse it into a Document object"""
+documents = []
+for url in urls:
     req = requests.get(url)
     article = simple_json_from_html_string(req.text, use_readability=True)
-    return Document(page_content=article['plain_text'][0]['text'], metadata={'source': url, 'page_title': article['title']})
+    if article["plain_text"]:
+        documents += [Document(page_content=article['plain_text'][0]['text'],
+                        metadata={'source': url, 'page_title': article['title']})]
 
-documents = [scrape_and_parse(f) for f in urls]  # Scrape and parse all the urls
 print(documents)
 
 text_splitter = CharacterTextSplitter(separator=' ', chunk_size=1000, chunk_overlap=200)
 texts = text_splitter.split_documents(documents)
 len(texts)
 
-#download the mistril or another model and modify the path here
-embeddings = LlamaCppEmbeddings(model_path="/home/ubuntu/perp/mistral-7b-v0.1.Q5_K_M.gguf", n_ctx=2048)
-llm = LlamaCpp(
-    model_path="/home/ubuntu/perp/mistral-7b-v0.1.Q5_K_M.gguf", #modify the path here
-    temperature=0.75,
-    n_ctx=2048,
+#download mistral with ollama pull mistral
+embeddings = OllamaEmbeddings(model="tinyllama")
+llm = ChatOllama(
+    model="tinyllama",
+    temperature=0,
 )
 
 docsearch = Chroma.from_documents(texts, embeddings)
